@@ -1,0 +1,10 @@
+sf.uri = https://login.salesforce.com
+sf.clientid = CLIENT_ID_FROM_EXTERNAL_CLIENT_APP
+sf.clientsecret = CLIENT_SECRET_FROM_EXTERNAL_CLIENT_APP
+
+spring.application.name = sf-sync
+
+spring.datasource.url = jdbc:mysql://localhost:3306/sf_db
+spring.datasource.username = root
+spring.datasource.password = root
+spring.jpa.hibernate.ddl-auto = update
