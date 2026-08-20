@@ -1,9 +1,12 @@
 package com.dev.sfsync.controller;
 
+import com.dev.sfsync.client.SfSyncClient;
 import com.dev.sfsync.dto.AccountDto;
 import com.dev.sfsync.dto.SfQueryResponseWrapper;
 import com.dev.sfsync.exception.SfSyncException;
 import com.dev.sfsync.service.SfSyncService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
@@ -29,9 +32,11 @@ import java.util.Map;
 @RestController
 public class SfSyncController {
 
+    private static final Logger logger = LoggerFactory.getLogger(SfSyncController.class);
 
     private final RestClient restClient;
     private final SfSyncService sfSyncService;
+    private final SfSyncClient sfSyncClient;
 
     private final String salesforceEndpoint;
     private final String clientId;
@@ -42,11 +47,13 @@ public class SfSyncController {
 
     public SfSyncController(RestClient restClient,
                             SfSyncService sfSyncService,
+                            SfSyncClient sfSyncClient,
                             @Value("${sf.uri}") String salesforceEndpoint,
                             @Value("${sf.clientid}") String clientId,
                             @Value("${sf.clientsecret}") String clientSecret){
         this.restClient = restClient;
         this.sfSyncService =sfSyncService;
+        this.sfSyncClient = sfSyncClient;
         this.salesforceEndpoint = salesforceEndpoint;
         this.clientId = clientId;
         this.clientSecret = clientSecret;
@@ -81,19 +88,13 @@ public class SfSyncController {
 
     @GetMapping(path="/account/{id}")
     public String syncAccount(@PathVariable String id){
-        setAccessToken();
-        AccountDto accountDto = restClient.get()
-                .uri(this.salesforceEndpoint+"/services/data/v60.0/sobjects/Account/{id}",id)
-                .header("Authorization","Bearer "+this.accessToken)
-                .retrieve()
-                .body(AccountDto.class);
-//        return "Success";
         try{
+            AccountDto accountDto = this.sfSyncClient.syncSingleAccount(id);
             sfSyncService.syncAccount(accountDto);
-        } catch (RuntimeException e) {
+            return this.accessToken + " "+accountDto.toString();
+        } catch (RuntimeException _) {
             throw new SfSyncException("error in sync");
         }
-        return this.accessToken + " "+accountDto.toString();
     }
 
     @GetMapping(path = "/syncAccounts")
@@ -134,8 +135,9 @@ public class SfSyncController {
 
     // This means: "Starting at minute 0, run every 2 minutes"
     // @Scheduled(cron = "0 */2 * * * ?")
-    @Scheduled(fixedDelay = 30000)
+    //@Scheduled(fixedDelay = 30000) //for every 30 seconds
     public void syncAccountsDeltaScheduled(){
+        logger.info("inside syncAccountsDeltaScheduled");
         syncAccountsDelta();
     }
 

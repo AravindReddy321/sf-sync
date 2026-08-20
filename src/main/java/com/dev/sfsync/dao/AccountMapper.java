@@ -10,8 +10,10 @@ public class AccountMapper {
 
     public Account convertAccountDtoToAccount(AccountDto accountDto){
         return Account.builder()
-                .name(accountDto.Name())
-                .sfId(accountDto.Id())
+                .name(accountDto.name())
+                .sfId(accountDto.id())
+                .description(accountDto.description())
+                .isDeleted(accountDto.isDeleted())
                 .lastSyncTime(Instant.now())
                 .build();
     }
