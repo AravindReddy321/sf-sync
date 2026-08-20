@@ -5,7 +5,7 @@ import com.dev.sfsync.exception.SfSyncException;
 import lombok.Getter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.core.io.Resource;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -95,7 +95,7 @@ public class SfSyncClient {
     }
 
 
-    public Map<?, ?> submitPostApiRequest(String uri, Map<String, String> bodyMap){
+    public Map<String, Object> submitPostApiRequest(String uri, Map<String, String> bodyMap){
         try {
             return restClient.post()
                     .uri(uri)
@@ -103,20 +103,20 @@ public class SfSyncClient {
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(bodyMap)
                     .retrieve()
-                    .body(Map.class);
+                    .body(new ParameterizedTypeReference<Map<String, Object>>(){});
         } catch (Exception e) {
             logger.error("error in submitPostApiRequest {}", e.getMessage());
             throw new SfSyncException(e.getMessage());
         }
     }
 
-    public Map<?, ?> submitGetApiRequest(String uri){
+    public Map<String, Object> submitGetApiRequest(String uri){
         try {
             return restClient.get()
                     .uri(uri)
                     .header(AUTHORIZATION, BEARER+" "+accessToken)
                     .retrieve()
-                    .body(Map.class);
+                    .body(new ParameterizedTypeReference<Map<String, Object>>(){});
         } catch (Exception e) {
             logger.error("error in submitGetApiRequest {}", e.getMessage());
             throw new SfSyncException(e.getMessage());

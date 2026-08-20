@@ -8,7 +8,6 @@ import com.dev.sfsync.service.SfSyncService;
 import com.dev.sfsync.utility.SfGrpcListener;
 import com.google.protobuf.ByteString;
 import com.salesforce.eventbus.protobuf.*;
-import io.grpc.Metadata;
 import io.grpc.stub.StreamObserver;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericDatumReader;
@@ -17,7 +16,6 @@ import org.apache.avro.io.BinaryDecoder;
 import org.apache.avro.io.DecoderFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
@@ -29,9 +27,10 @@ import java.util.concurrent.ConcurrentHashMap;
 public class SfGrpcClient {
 
     private static final Logger logger = LoggerFactory.getLogger("SfSyncClient.class");
+    private static final String IS_DELETED = "IsDeleted";
+    private static final String CHANGE_TYPE = "changeType";
     private enum ChangeType{ UPDATE, CREATE, DELETE }
 
-//    private final SfSyncClient sfSyncClient;
     private final SfSyncService sfSyncService;
     private final ObjectMapper objectMapper;
 
@@ -40,7 +39,6 @@ public class SfGrpcClient {
 
     private final Map<String, CdcHandler> cdcHandlerMap;
 
-//    private final String topicName;
     private static ConcurrentHashMap<String, String> schemaMap = new ConcurrentHashMap<>();
     private static List<ProducerEvent> failedProducerEventList = new ArrayList<>();
 
@@ -52,38 +50,9 @@ public class SfGrpcClient {
         this.sfSyncService = sfSyncService;
         this.objectMapper = objectMapper;
         this.cdcHandlerMap =cdcHandlerMap;
-//        String accessToken = "Bearer "+getAccessToken();
-
-//        this.asyncStub = asyncStub; //unauthenticated
-//        this.blockingStub = blockingStub; //unauthenticated
-//        Metadata headers = new Metadata();
-//
-//        Metadata.Key<String> authKey = Metadata.Key.of("accesstoken",Metadata.ASCII_STRING_MARSHALLER);
-//        Metadata.Key<String> instanceUrl = Metadata.Key.of("instanceurl",Metadata.ASCII_STRING_MARSHALLER);
-//        Metadata.Key<String> tenantid = Metadata.Key.of("tenantid",Metadata.ASCII_STRING_MARSHALLER);
-//
-//        headers.put(authKey,accessToken);
-//        headers.put(instanceUrl,sfUri);
-//        headers.put(tenantid,sfOrgId);
-
-
-//        this.asyncStub = asyncStub.withInterceptors(
-//                MetadataUtils.newAttachHeadersInterceptor(headers)
-//        );
         this.asyncStubAuthenticated = asyncStubAuthenticated;
-
-//        this.blockingStub = blockingStub.withInterceptors(
-//                MetadataUtils.newAttachHeadersInterceptor(headers)
-//        );
         this.blockingStubAuthenticated =blockingStubAuthenticated;
-
-//        this.topicName = topicName;
-
     }
-
-//    private String getAccessToken(){
-//        return this.sfSyncClient.getAccessToken();
-//    }
 
 
     public TopicRequest buildTopicRequest(String topicName){
@@ -166,8 +135,8 @@ public class SfGrpcClient {
                 logger.info("rawPayloadJavaBytes {}",rawPayloadJavaBytes);
                 dataFinalMapList.add(decodeAvroPayload(schemaJson, rawPayloadJavaBytes));
             } catch (Exception e) {
+                logger.error("error in getFinalDataMapList {}",e.getMessage());
                 failedProducerEventList.add(producerEvent);
-                // throw new RuntimeException(e);
             }
         }
         logger.info("dataMapList {}", dataFinalMapList);
@@ -180,9 +149,7 @@ public class SfGrpcClient {
                 logger.info("fetching schema for id {}", id);
                 SchemaRequest schemaRequest = SchemaRequest.newBuilder().setSchemaId(id).build();
                 SchemaInfo schemaInfo = blockingStubAuthenticated.getSchema(schemaRequest);
-                String schemaJson = schemaInfo.getSchemaJson();
-//                schemaMap.put(id, schemaJson);
-                return schemaJson;
+                return schemaInfo.getSchemaJson();
             });
         } catch (Exception e) {
             logger.error("error in getAvroSchemaJson {}",e.getMessage());
@@ -198,27 +165,26 @@ public class SfGrpcClient {
 
             BinaryDecoder decoder = DecoderFactory.get().binaryDecoder(rawPayloadJavaBytes, null);
 
-            GenericRecord record = reader.read(null, decoder);
+            GenericRecord changeEventRecord = reader.read(null, decoder);
 
-            logger.info("record {}",record);
+            logger.info("record {}",changeEventRecord);
 
-            GenericRecord header = (GenericRecord) record.get("ChangeEventHeader");
+            GenericRecord header = (GenericRecord) changeEventRecord.get("ChangeEventHeader");
             logger.info("header {}", header);
 
-            String changeEvent = header.get("changeType").toString();
+            String changeEvent = header.get(CHANGE_TYPE).toString();
             ChangeType changeType =  ChangeType.valueOf(changeEvent);
 
-            finalDataMap.put("changeType",changeType);
+            finalDataMap.put(CHANGE_TYPE,changeType);
             logger.info("changeEventName {}", schema.getName());
             finalDataMap.put("changeEventName", schema.getName() );
 
-            Map<String, Object> dataMap = new HashMap<>();
-            dataMap = populateDataMapBasedOnChangeEvent(changeType, header, record, schema);
+            Map<String, Object> dataMap = populateDataMapBasedOnChangeEvent(changeType, header, changeEventRecord, schema);
 
             logger.info("dataMap before id {}", dataMap);
             for(Object recordId : (List<?>) header.get("recordIds")){
                 dataMap.put("Id",recordId.toString());
-                if(!dataMap.containsKey("IsDeleted")) { dataMap.put("IsDeleted", false); }
+                dataMap.computeIfAbsent(IS_DELETED, key->false);
                 logger.info("dataMap {}", dataMap);
                 finalDataMap.put("dataMap",dataMap);
             }
@@ -230,51 +196,32 @@ public class SfGrpcClient {
 
     }
 
-    private Map<String, Object>  populateDataMapBasedOnChangeEvent(ChangeType changeType, GenericRecord header, GenericRecord record, Schema schema){
+    private Map<String, Object>  populateDataMapBasedOnChangeEvent(ChangeType changeType, GenericRecord header, GenericRecord changeEventRecord, Schema schema){
         Map<String, Object> dataMap = new HashMap<>();
         List<String> fieldNames = new ArrayList<>();
 
         if(ChangeType.UPDATE.equals(changeType)){
             logger.info("change type update");
         }
-
-        // if("UPDATE".equals(header.get("changeType").toString())){
         if(ChangeType.UPDATE.equals(changeType)){
-                /*for(String changedFieldName : changedFieldNames){
-                    if("LastModifiedDate".equals(changedFieldName)){ continue;}
-                    Object value = record.get(changedFieldName);
-                    if(value != null){
-                        if(value instanceof CharSequence){ value = value.toString(); }
-                        dataMap.put(changedFieldName, value);
-                    }
-                }
-//                dataMap.put("Id","001Hs00005uB0A0IAK");
-                logger.info("changed record Ids {}", header.get("recordIds"));
-                logger.info("changed record Ids class name {}", header.get("recordIds").getClass().getName());
-
-                logger.info("dataMap {}", dataMap);
-                ObjectMapper mapper = new ObjectMapper();*/
-            Set<String> updatedFieldCategories = Set.of("changedFields");//,"nulledFields");
+            Set<String> updatedFieldCategories = Set.of("changedFields");
             for(String updatedFieldCategory : updatedFieldCategories){
                 fieldNames.addAll(convertBitmapToFieldNames(header, updatedFieldCategory,schema));
             }
         } else if (ChangeType.CREATE.equals(changeType)) {
             logger.info("change type create");
-            logger.info("fields from record {}", record.getSchema().getFields());
+            logger.info("fields from record {}", changeEventRecord.getSchema().getFields());
             for(Schema.Field field : schema.getFields()){
-//                    logger.info("field {}", field);
-//                    logger.info("field.name.toString {}", field.name().toString());
-//                    logger.info("field value {}",record.get(field.name().toString()));
-                String fieldName = field.name().toString();
+                String fieldName = field.name();
                 if("ChangeEventHeader".equals(fieldName)){ continue; }
                 fieldNames.add(fieldName);
             }
         } else if (ChangeType.DELETE.equals(changeType)){
             logger.info("change type delete");
-            dataMap.put("IsDeleted", true);
+            dataMap.put(IS_DELETED, true);
         }
         logger.info("fieldNames {}", fieldNames);
-        getDataMapFromAvroPayload(fieldNames, record, dataMap);
+        getDataMapFromAvroPayload(fieldNames, changeEventRecord, dataMap);
 
         return dataMap;
     }
@@ -287,8 +234,6 @@ public class SfGrpcClient {
         if(bitmapList == null || bitmapList.isEmpty()) return fieldNamesList;
         logger.info("bitmapList {}",bitmapList);
         for(int i=0; i<bitmapList.size(); i++){
-            // 0x23
-            // 0010 0011
             Object hexStringGenericObject = bitmapList.get(i);
             logger.info("hexStringGenericObject {}",hexStringGenericObject);
             String rawHex = hexStringGenericObject.toString().trim();
@@ -310,12 +255,10 @@ public class SfGrpcClient {
     public void getDataMapFromAvroPayload(List<String> fieldNames, GenericRecord avroPayload, Map<String, Object> dataMap){
         for(String fieldName : fieldNames){
             Object value = avroPayload.get(fieldName);
-//            if(value == null) { continue;}
-            if(value != null && value instanceof CharSequence) { value = value.toString(); }
+            if(value instanceof CharSequence) { value = value.toString(); }
             dataMap.put(fieldName, value);
         }
-        logger.info("dataMap {}", dataMap);
-//        return dataMap;
+        logger.info("dataMap from getDataMapFromAvroPayload {}", dataMap);
     }
 
 
@@ -324,15 +267,15 @@ public class SfGrpcClient {
         for(Map<String, Object> finalDataMap : finalDataMapList){
             Map<String, Object> dataMap = (Map<String, Object>)finalDataMap.get("dataMap");
             String sfId = (String)dataMap.get("Id");
-            logger.info("change type class {}",finalDataMap.get("changeType").getClass().getName());
-            if(ChangeType.CREATE.equals(finalDataMap.get("changeType"))){
+            logger.info("change type class {}",finalDataMap.get(CHANGE_TYPE).getClass().getName());
+            if(ChangeType.CREATE.equals(finalDataMap.get(CHANGE_TYPE))){
                 accountDtoCreateList.add(objectMapper.convertValue(dataMap,AccountDto.class));
             } else{
                 updatedDataMap.put(sfId, dataMap);
             }
         }
         logger.info("updatedDataMap {}", updatedDataMap);
-        if(updatedDataMap != null && !updatedDataMap.isEmpty()){
+        if(!updatedDataMap.isEmpty()){
             accountDtoUpdateList.addAll(buildAccountDtoUpdateEvent(updatedDataMap));
         }
     }
@@ -350,15 +293,10 @@ public class SfGrpcClient {
                     .id(dataMap.containsKey("Id") ? dataMap.get("Id").toString() : acc.sfId)
                     .name(dataMap.containsKey("Name") ? dataMap.get("Name").toString() : acc.name)
                     .description(dataMap.containsKey("Description") ? (String) dataMap.get("Description") : acc.description)
-                    .isDeleted(dataMap.containsKey("IsDeleted") ? (boolean)dataMap.get("IsDeleted"): acc.isDeleted)
+                    .isDeleted(dataMap.containsKey(IS_DELETED) ? (boolean)dataMap.get(IS_DELETED): acc.isDeleted)
                     .build();
             logger.info("dataMap {}",dataMap);
             logger.info("accountDto {}",accountDto);
-//                                    updatedAccounts.add(objectMapper.readerForUpdating(acc)
-//                                                    .readValue(objectMapper.writeValueAsString(dataMap)));
-//                                    objectMapper.readerForUpdating(acc)
-//                                            .readValue(objectMapper.writeValueAsString(dataMap));
-//                                    logger.info("acc after update {}",acc);
             updatedAccountDtos.add(accountDto);
         }
         return  updatedAccountDtos;
@@ -378,11 +316,11 @@ public class SfGrpcClient {
 
         populateCreateOrUpdateAccountDtoList(finalDataMapList, accountDtoCreateList, accountDtoUpdateList);
 
-        if(accountDtoCreateList != null && !accountDtoCreateList.isEmpty()){
+        if(!accountDtoCreateList.isEmpty()){
             logger.info("accountDtoCreateList {}",accountDtoCreateList);
             syncAccounts(accountDtoCreateList);
         }
-        if(accountDtoUpdateList != null && !accountDtoUpdateList.isEmpty()){
+        if(!accountDtoUpdateList.isEmpty()){
             logger.info("updatedAccountDtoList {}", accountDtoUpdateList);
             syncAccounts(accountDtoUpdateList);
         }
@@ -395,40 +333,6 @@ public class SfGrpcClient {
             logger.info("asyncStub: {}",asyncStubAuthenticated);
             logger.info("blockingStub: {}",blockingStubAuthenticated);
 
-            /*StreamObserver<FetchRequest>[] fetchRequestStreamObserver = new StreamObserver[1];
-            fetchRequestStreamObserver[0]= asyncStub.subscribe(
-                    new StreamObserver<FetchResponse>() {
-                        @Override
-                        public void onNext(FetchResponse value) {
-                            logger.info("value: {}"+value);
-
-                            List<ConsumerEvent> consumerEventList = new ArrayList<>();
-                            List<ProducerEvent> producerEventList = new ArrayList<>();
-
-                            consumerEventList.addAll(value.getEventsList());
-                            consumerEventList.forEach(event -> producerEventList.add(event.getEvent()));
-
-                            processProducerEvents(producerEventList);
-
-                            logger.info("value get pending num requested {}", value.getPendingNumRequested());
-                            checkAndRefill(topicName, value.getPendingNumRequested(), value.getLatestReplayId(), numRequested);
-                        }
-
-                        @Override
-                        public void onError(Throwable t) {
-
-                        }
-
-                        @Override
-                        public void onCompleted() {
-                            logger.info("onCompleted");
-
-                        }
-                    }
-            );
-
-            FetchRequest fetchRequest = buildFetchRequest(topicName, numRequested);
-            fetchRequestStreamObserver[0].onNext(fetchRequest);*/
             StreamObserver<FetchRequest> fetchRequestStreamObserver = asyncStubAuthenticated.subscribe(new SfGrpcListener(this, cdcHandlerMap, topicName, numRequested));
             fetchRequestStreamObserverMap.put(topicName, fetchRequestStreamObserver);
             fetchRequestStreamObserver.onNext(buildFetchRequest(topicName, numRequested, replayId));

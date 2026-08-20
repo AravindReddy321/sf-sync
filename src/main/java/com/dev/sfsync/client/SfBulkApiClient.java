@@ -9,9 +9,7 @@ import org.springframework.batch.core.job.parameters.JobParameters;
 import org.springframework.batch.core.launch.JobOperator;
 import org.springframework.context.ApplicationContext;
 import org.springframework.core.io.Resource;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClient;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -20,6 +18,8 @@ import java.util.Map;
 public class SfBulkApiClient {
 
     private static final Logger logger = LoggerFactory.getLogger(SfBulkApiClient.class);
+    private static final String JOB_PARAM_MAP_BEAN_NAME="jobParamMapBean";
+    private static final String JOB_COMPLETE_STATUS="JobComplete";
 
     private final String salesforceBaseEndpoint;
     private final String  accessToken;
@@ -28,9 +28,6 @@ public class SfBulkApiClient {
     private final JobOperator jobOperator;
     private final Job accountsSyncBatchJob;
     private final Job casesSyncBatchJob;
-
-//    private static final String BEARER = "Bearer";
-//    private static final String AUTHORIZATION = "Authorization";
 
     public SfBulkApiClient(String sfUriBean, String accessTokenBean, SfSyncClient sfSyncClient, ApplicationContext applicationContext, JobOperator jobOperator, Job accountsSyncBatchJob, Job casesSyncBatchJob) {
         this.salesforceBaseEndpoint = sfUriBean;
@@ -55,14 +52,6 @@ public class SfBulkApiClient {
     }
 
     public Map<String, String> buildBuilkJobQueryBody(String query){
-//        String queryBody = """
-//                {
-//                    "operation":"query",
-//                    "query":"%s"
-//                }
-//                """;
-//        queryBody = queryBody.formatted(query);
-//        logger.info("queryBody {}", queryBody);
 
         Map<String, String> queryBodyMap = new HashMap<>();
         queryBodyMap.put("operation","query");
@@ -85,29 +74,30 @@ public class SfBulkApiClient {
 
             String bulkJobId = (String)bulkQueryResponseMap.get("id");
             logger.info("bulkJobId {}", bulkJobId);
-            String bulkJobStatus = "JobComplete";
-            do{
+            String bulkJobStatus = "";
+            while(!JOB_COMPLETE_STATUS.equals(bulkJobStatus)){
                 Map<?, ?> bulkJobStatusResponseMap = checkBulkJobStatus(bulkJobId);
                 logger.info("bulkJobStatusResponseMap {}", bulkJobStatusResponseMap);
                 bulkJobStatus = (String)bulkJobStatusResponseMap.get("state");
                 logger.info("bulkJobStatus {}", bulkJobStatus);
                 Thread.sleep(2000);
-            } while(!"JobComplete".equals(bulkJobStatus));
+            }
 
-            if(bulkJobId != null && "JobComplete".equals(bulkJobStatus)){
+            if(bulkJobId != null && !bulkJobStatus.isBlank()){
                 getBulkJobResults(bulkJobId, sfObjectName);
             }
 
         } catch (Exception e) {
             logger.error("error in submitBulkQuery {}", e.getMessage());
+            Thread.currentThread().interrupt();
             throw new SfSyncException(e.getMessage());
         }
 
     }
 
-    public Map<?, ?> checkBulkJobStatus(String jobId){
+    public Map<String, Object> checkBulkJobStatus(String jobId){
         try{
-            Map<?, ?> bulkJobStatusResponseMap = sfSyncClient.submitGetApiRequest(getBulkJobCheckStatusUrl(jobId));
+            Map<String, Object> bulkJobStatusResponseMap = sfSyncClient.submitGetApiRequest(getBulkJobCheckStatusUrl(jobId));
             logger.info("bulkJobStatusResponseMap {}", bulkJobStatusResponseMap);
             return bulkJobStatusResponseMap;
         } catch(Exception e){
@@ -119,20 +109,24 @@ public class SfBulkApiClient {
     @Transactional
     public void getBulkJobResults(String jobId, String sfObjectName){
         try{
-//            Map<?, ?> bulkJobResultMap = sfSyncClient.submitGetApiRequest(getBulkJobResultsUrl(jobId));
             Resource resource = sfSyncClient.submitGetApiRequestCsv(getBulkJobResultsUrl(jobId));
-            if( applicationContext == null || !applicationContext.containsBean("jobParamMapBean")){ throw new SfSyncException("applicationContext is empty or jobParamMapBean is not found"); }
-            applicationContext.getBean("jobParamMapBean", Map.class).put(sfObjectName, resource);
-            logger.info("bulkJobResultMap {}", applicationContext.getBean("jobParamMapBean", Map.class));
+            if( applicationContext == null || !applicationContext.containsBean(JOB_PARAM_MAP_BEAN_NAME)){ throw new SfSyncException("applicationContext is empty or jobParamMapBean is not found"); }
+            applicationContext.getBean(JOB_PARAM_MAP_BEAN_NAME, Map.class).put(sfObjectName, resource);
+            logger.info("bulkJobResultMap {}", applicationContext.getBean(JOB_PARAM_MAP_BEAN_NAME, Map.class));
 
             logger.info("starting accountsSyncBulkJob");
             switch (sfObjectName){
                 case "Account":
                     jobOperator.start(accountsSyncBatchJob, new JobParameters());
+                    break;
 
                 case "Case":
                     jobOperator.start(casesSyncBatchJob, new JobParameters());
                     logger.info("case bulk api job should be invoked");
+                    break;
+
+                default:
+                    return;
 
             }
         } catch (Exception e){
