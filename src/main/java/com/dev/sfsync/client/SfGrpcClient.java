@@ -4,10 +4,13 @@ import com.dev.sfsync.dao.Account;
 import com.dev.sfsync.dto.AccountDto;
 import com.dev.sfsync.exception.SfSyncException;
 import com.dev.sfsync.handler.CdcHandler;
+import com.dev.sfsync.service.ErrorLogService;
 import com.dev.sfsync.service.SfSyncService;
+import com.dev.sfsync.utility.RetryCdcState;
 import com.dev.sfsync.utility.SfGrpcListener;
 import com.google.protobuf.ByteString;
 import com.salesforce.eventbus.protobuf.*;
+import io.grpc.StatusRuntimeException;
 import io.grpc.stub.StreamObserver;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericDatumReader;
@@ -16,6 +19,9 @@ import org.apache.avro.io.BinaryDecoder;
 import org.apache.avro.io.DecoderFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.retry.annotation.Backoff;
+import org.springframework.retry.annotation.Retryable;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
@@ -32,6 +38,8 @@ public class SfGrpcClient {
     private enum ChangeType{ UPDATE, CREATE, DELETE }
 
     private final SfSyncService sfSyncService;
+    private final ErrorLogService errorLogService;
+    private final ThreadPoolTaskScheduler threadPoolTaskScheduler;
     private final ObjectMapper objectMapper;
 
     private final PubSubGrpc.PubSubStub asyncStubAuthenticated;
@@ -42,12 +50,15 @@ public class SfGrpcClient {
     private static ConcurrentHashMap<String, String> schemaMap = new ConcurrentHashMap<>();
     private static List<ProducerEvent> failedProducerEventList = new ArrayList<>();
 
-    private Map<String,StreamObserver<FetchRequest>> fetchRequestStreamObserverMap = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<String,StreamObserver<FetchRequest>> fetchRequestStreamObserverMap = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<String, RetryCdcState> retryCdcStateMap = new ConcurrentHashMap<>();
 
 
-    public SfGrpcClient(SfSyncService sfSyncService, ObjectMapper objectMapper, PubSubGrpc.PubSubStub asyncStubAuthenticated, PubSubGrpc.PubSubBlockingStub blockingStubAuthenticated, Map<String, CdcHandler> cdcHandlerMap){
+    public SfGrpcClient(ThreadPoolTaskScheduler threadPoolTaskScheduler, ErrorLogService errorLogService, SfSyncService sfSyncService, ObjectMapper objectMapper, PubSubGrpc.PubSubStub asyncStubAuthenticated, PubSubGrpc.PubSubBlockingStub blockingStubAuthenticated, Map<String, CdcHandler> cdcHandlerMap){
 
         this.sfSyncService = sfSyncService;
+        this.errorLogService = errorLogService;
+        this.threadPoolTaskScheduler = threadPoolTaskScheduler;
         this.objectMapper = objectMapper;
         this.cdcHandlerMap =cdcHandlerMap;
         this.asyncStubAuthenticated = asyncStubAuthenticated;
@@ -61,10 +72,16 @@ public class SfGrpcClient {
                 .build();
     }
 
-    public void getTopicInfo(String topicName){
+    @Retryable(
+            value = {StatusRuntimeException.class},
+            exceptionExpression = "status.code.toString()  == 'UNAVAILABLE' ",
+            maxAttempts = 3,
+            backoff = @Backoff(delay = 1000)
+    )
+    public void getTopicInfo(String topicName) throws StatusRuntimeException{
         TopicRequest topicRequest = buildTopicRequest(topicName);
+        logger.info("getTopicInfo blockingStubAuthenticated {}",blockingStubAuthenticated);
         TopicInfo topicInfo = blockingStubAuthenticated.getTopic(topicRequest);
-
         logger.info("topicInfo: {}",topicInfo);
     }
 
@@ -111,15 +128,10 @@ public class SfGrpcClient {
     }
 
     public void restartSubsrciption(String topicName, int numRequested, ByteString replayId){
-        try{
             if(fetchRequestStreamObserverMap.containsKey(topicName)){
                 fetchRequestStreamObserverMap.remove(topicName);
-                startCdcSubscription(topicName, numRequested, replayId);
             }
-        } catch (Exception e) {
-            logger.info("error in restartSubsrciption no replayid {}", e.getMessage());
-            throw new SfSyncException(e.getMessage());
-        }
+            startCdcSubscription(topicName, numRequested, replayId);
     }
 
     public List<Map<String,Object>>  getFinalDataMapList(List<ProducerEvent> producerEventList){
@@ -330,16 +342,54 @@ public class SfGrpcClient {
 
     public void startCdcSubscription(String topicName, int numRequested, ByteString replayId){
         try{
-            logger.info("asyncStub: {}",asyncStubAuthenticated);
-            logger.info("blockingStub: {}",blockingStubAuthenticated);
+            logger.info("inside startCdcSubscription topic {}", topicName);
+            logger.info("asyncStubAuthenticated: {}",asyncStubAuthenticated);
+            logger.info("blockingStubAuthenticated: {}",blockingStubAuthenticated);
 
-            StreamObserver<FetchRequest> fetchRequestStreamObserver = asyncStubAuthenticated.subscribe(new SfGrpcListener(this, cdcHandlerMap, topicName, numRequested));
+            StreamObserver<FetchRequest> fetchRequestStreamObserver = asyncStubAuthenticated.subscribe(new SfGrpcListener(threadPoolTaskScheduler, errorLogService,this, cdcHandlerMap, topicName, numRequested));
             fetchRequestStreamObserverMap.put(topicName, fetchRequestStreamObserver);
+            retryCdcStateMap.computeIfAbsent(topicName, t-> getDefaultRetryCdcState(numRequested));
             fetchRequestStreamObserver.onNext(buildFetchRequest(topicName, numRequested, replayId));
         } catch (Exception e) {
             throw new SfSyncException(e.getMessage());
         }
 
+    }
+
+    public RetryCdcState getDefaultRetryCdcState(int numRequested){
+        return RetryCdcState.builder()
+                .numRequested(numRequested)
+                .retryCount(0)
+                .replayId(null)
+                .build();
+    }
+
+    public RetryCdcState getRetryCdcState(String topicName){
+        return retryCdcStateMap.getOrDefault(topicName, null);
+    }
+
+    public void resetRetryCdcState(String topicName, int  numRequested){
+        retryCdcStateMap.put(topicName, getDefaultRetryCdcState(numRequested));
+    }
+
+    public boolean needToResetRetryCdcState(String topicName){
+        RetryCdcState retryCdcState = getRetryCdcState(topicName);
+        if(retryCdcState == null) return true;
+        if(retryCdcState.getRetryCount() > 0) return true;
+        return false;
+    }
+
+    public boolean retryLimitAvialbale(String topicName){
+        RetryCdcState retryCdcState = getRetryCdcState(topicName);
+        return retryCdcState == null || retryCdcState.getRetryCount() < 3;
+    }
+
+    public void retryCdcStateIncerement(String  topicName, int numRequested){
+        RetryCdcState retryCdcState = getRetryCdcState(topicName);
+        if(retryCdcState == null)
+            resetRetryCdcState(topicName, numRequested);
+        else
+            retryCdcState.setRetryCount(retryCdcState.getRetryCount() + 1);
     }
 
 }

@@ -1,10 +1,14 @@
 package com.dev.sfsync.utility;
 
 import com.dev.sfsync.client.SfGrpcClient;
+import com.dev.sfsync.dto.ErrorLogDto;
 import com.dev.sfsync.exception.SfSyncException;
 import com.dev.sfsync.handler.CdcHandler;
+import com.dev.sfsync.service.ErrorLogService;
 import com.google.protobuf.ByteString;
 import com.salesforce.eventbus.protobuf.*;
+import io.grpc.Status;
+import io.grpc.StatusRuntimeException;
 import io.grpc.stub.StreamObserver;
 import lombok.Data;
 import org.apache.avro.Schema;
@@ -14,7 +18,10 @@ import org.apache.avro.io.BinaryDecoder;
 import org.apache.avro.io.DecoderFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
+import java.time.Instant;
 import java.util.*;
 
 @Data
@@ -24,15 +31,19 @@ public class SfGrpcListener implements StreamObserver<FetchResponse> {
 
     private final Map<String, CdcHandler> cdcHandlerMap = new HashMap<>();
     private final SfGrpcClient sfGrpcClient;
+    private final ErrorLogService errorLogService;
+    private final ThreadPoolTaskScheduler threadPoolTaskScheduler;
     private enum ChangeType { CREATE, UPDATE, DELETE };
 
     private final String topicName;
     private final int numRequested;
     private ByteString lastReplayId;
 
-    public SfGrpcListener(SfGrpcClient sfGrpcClient, Map<String, CdcHandler> cdcHandlerMap, String topicName, int numRequested) {
+    public SfGrpcListener(ThreadPoolTaskScheduler threadPoolTaskScheduler,ErrorLogService errorLogService, SfGrpcClient sfGrpcClient, Map<String, CdcHandler> cdcHandlerMap, String topicName, int numRequested) {
         this.cdcHandlerMap.putAll(cdcHandlerMap);
         this.sfGrpcClient = sfGrpcClient;
+        this.errorLogService = errorLogService;
+        this.threadPoolTaskScheduler = threadPoolTaskScheduler;
         this.topicName = topicName;
         this.numRequested = numRequested;
     }
@@ -53,6 +64,9 @@ public class SfGrpcListener implements StreamObserver<FetchResponse> {
             logger.info("value get pending num requested {}", value.getPendingNumRequested());
             lastReplayId = value.getLatestReplayId();
             int pendingNumRequested= value.getPendingNumRequested();
+            if(sfGrpcClient.needToResetRetryCdcState(topicName)){
+                sfGrpcClient.resetRetryCdcState(topicName, numRequested);
+            }
             if(pendingNumRequested < numRequested){
                 sfGrpcClient.refillFetchRequest(topicName,numRequested,lastReplayId);
             }
@@ -63,27 +77,44 @@ public class SfGrpcListener implements StreamObserver<FetchResponse> {
     }
 
     public void onError(Throwable t){
-        try{
-            logger.info("in onError t {}",t.getClass().getName());
-            logger.info("from logger.info t.toString() {}",t.toString());
-            logger.error("from logger.error t.toString() {}",t.toString());
-            Thread.currentThread().sleep(5000);
-            restartSubsrciption();
-        } catch (InterruptedException e){
-            logger.error("error in onError thread sleep {}",e.getMessage());
-            throw new SfSyncException(e.getMessage());
+        logger.error("inside in onError {}", t.getMessage());
+//        try{
+//            logger.info("in onError t {}",t.getClass().getName());
+//            logger.info("from logger.info t.toString() {}",t.toString());
+//            logger.error("from logger.error t.toString() {}",t.toString());
+//            Thread.currentThread().sleep(5000);
+//            restartSubsrciption();
+//        } catch (InterruptedException e){
+//            logger.error("error in onError thread sleep {}",e.getMessage());
+//            throw new SfSyncException(e.getMessage());
+//        }
+
+        Status status = Status.fromThrowable(t);
+        if(status.getCode() == Status.Code.UNAVAILABLE && sfGrpcClient.retryLimitAvialbale(topicName)){
+            retrySubsrciption();
+            return;
         }
+        StatusRuntimeException e = status.asRuntimeException();
+        ErrorLogDto errorLogDto = new ErrorLogDto(
+                e.getMessage(),
+                this.topicName+" response observer on error",
+                "",
+                "Salesforce",
+                e.getClass().toString(),
+                e.toString()
+        );
+        errorLogService.logError(List.of(errorLogDto));
     }
 
     public void onCompleted() {
-        try{
-            logger.info("in onCompleted");
-            Thread.currentThread().sleep(5000);
-            restartSubsrciption();
-        } catch(InterruptedException e){
-            logger.error("error in onCompleted thread sleep {}",e.getMessage());
-            throw new SfSyncException(e.getMessage());
-        }
+        logger.info("in onCompleted");
+//        try{
+//            Thread.currentThread().sleep(5000);
+//            restartSubsrciption();
+//        } catch(InterruptedException e){
+//            logger.error("error in onCompleted thread sleep {}",e.getMessage());
+//            throw new SfSyncException(e.getMessage());
+//        }
     }
 
     public void processProducerEvents(List<ProducerEvent> producerEventList){
@@ -299,5 +330,11 @@ public class SfGrpcListener implements StreamObserver<FetchResponse> {
 
     public void restartSubsrciption(){
         sfGrpcClient.restartSubsrciption(this.topicName, this.numRequested, this.lastReplayId);
+    }
+
+
+    public void retrySubsrciption(){
+        sfGrpcClient.retryCdcStateIncerement(topicName, numRequested);
+        threadPoolTaskScheduler.schedule( this::restartSubsrciption, Instant.now().plusSeconds(60));
     }
 }

@@ -83,7 +83,7 @@ public class SfBulkApiClient {
                 Thread.sleep(2000);
             }
 
-            if(bulkJobId != null && !bulkJobStatus.isBlank()){
+            if(bulkJobId != null){
                 getBulkJobResults(bulkJobId, sfObjectName);
             }
 

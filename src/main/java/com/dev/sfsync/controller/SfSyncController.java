@@ -81,7 +81,7 @@ public class SfSyncController {
                 .retrieve()
                 .body(Map.class).get("access_token");
         if(accessToken != null){
-            this.expirationTime = Instant.now().plusSeconds(7200);
+            expirationTime = Instant.now().plusSeconds(7200);
         }
         return accessToken;
     }

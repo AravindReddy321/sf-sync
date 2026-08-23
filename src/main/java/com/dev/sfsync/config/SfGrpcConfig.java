@@ -2,14 +2,25 @@ package com.dev.sfsync.config;
 
 import com.dev.sfsync.client.SfSyncClient;
 import com.salesforce.eventbus.protobuf.PubSubGrpc;
+import io.grpc.Channel;
 import io.grpc.Metadata;
 import io.grpc.stub.MetadataUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.grpc.client.autoconfigure.GrpcClientProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.grpc.client.NettyGrpcChannelFactory;
+import org.springframework.retry.annotation.Backoff;
+import org.springframework.retry.annotation.Retryable;
+
+import java.io.IOException;
+import java.util.Map;
 
 @Configuration
 public class SfGrpcConfig {
+    public static final Logger logger = LoggerFactory.getLogger(SfGrpcConfig.class);
 
 
     @Bean
@@ -32,6 +43,7 @@ public class SfGrpcConfig {
 
     @Bean
     public PubSubGrpc.PubSubBlockingStub blockingStubAuthenticated(PubSubGrpc.PubSubBlockingStub blockingStub, Metadata headers) {
+        logger.info("inside blockingStubAuthenticated");
         return blockingStub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(headers));
     }
 
@@ -39,4 +51,14 @@ public class SfGrpcConfig {
     public PubSubGrpc.PubSubStub asyncStubAuthenticated(PubSubGrpc.PubSubStub asyncStub, Metadata headers) {
         return asyncStub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(headers));
     }
+
+    @Bean
+    public String printGrpcBeans(NettyGrpcChannelFactory nettyGrpcChannelFactory, GrpcClientProperties grpcClientProperties) {
+        logger.info("inside printGrpcBeans");
+        logger.info("netty grpc channel factory {}", nettyGrpcChannelFactory);
+        logger.info("grpc client properties {}", grpcClientProperties.getChannel());
+        return "test";
+    }
+
+
 }
