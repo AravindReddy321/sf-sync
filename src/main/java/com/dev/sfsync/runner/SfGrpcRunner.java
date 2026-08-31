@@ -1,12 +1,9 @@
 package com.dev.sfsync.runner;
 
 import com.dev.sfsync.client.SfGrpcClient;
-import com.dev.sfsync.dao.ErrorLogMapper;
 import com.dev.sfsync.dto.ErrorLogDto;
 import com.dev.sfsync.exception.SfSyncException;
-import com.dev.sfsync.repository.ErrorLogRepository;
 import com.dev.sfsync.service.ErrorLogService;
-import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -75,7 +72,7 @@ public class SfGrpcRunner implements CommandLineRunner {
             errorLogDtoList.add(errorLogDto);
         });
 
-        errorLogService.logError(errorLogDtoList);
+        errorLogService.logErrorList(errorLogDtoList);
         throw new SfSyncException("Grpc Exception");
     }
 
@@ -84,7 +81,7 @@ public class SfGrpcRunner implements CommandLineRunner {
         Arrays.stream(applicationContext.getBeanDefinitionNames())
                 .forEach(b -> {
                     logger.info("beanName {}", b);
-                    if("nettyGrpcChannelFactory".equals(b.toString())){
+                    if("nettyGrpcChannelFactory".equals(b)){
                         logger.info("nettyGrpcChannelFactory found");
                     }
                 });

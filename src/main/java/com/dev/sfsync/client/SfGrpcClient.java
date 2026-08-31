@@ -2,8 +2,10 @@ package com.dev.sfsync.client;
 
 import com.dev.sfsync.dao.Account;
 import com.dev.sfsync.dto.AccountDto;
+import com.dev.sfsync.dto.ErrorLogDto;
 import com.dev.sfsync.exception.SfSyncException;
 import com.dev.sfsync.handler.CdcHandler;
+import com.dev.sfsync.service.DlqService;
 import com.dev.sfsync.service.ErrorLogService;
 import com.dev.sfsync.service.SfSyncService;
 import com.dev.sfsync.utility.RetryCdcState;
@@ -20,6 +22,7 @@ import org.apache.avro.io.DecoderFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.retry.annotation.Backoff;
+import org.springframework.retry.annotation.Recover;
 import org.springframework.retry.annotation.Retryable;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.stereotype.Component;
@@ -40,6 +43,7 @@ public class SfGrpcClient {
     private final SfSyncService sfSyncService;
     private final ErrorLogService errorLogService;
     private final ThreadPoolTaskScheduler threadPoolTaskScheduler;
+    private final DlqService dlqService;
     private final ObjectMapper objectMapper;
 
     private final PubSubGrpc.PubSubStub asyncStubAuthenticated;
@@ -54,11 +58,12 @@ public class SfGrpcClient {
     private ConcurrentHashMap<String, RetryCdcState> retryCdcStateMap = new ConcurrentHashMap<>();
 
 
-    public SfGrpcClient(ThreadPoolTaskScheduler threadPoolTaskScheduler, ErrorLogService errorLogService, SfSyncService sfSyncService, ObjectMapper objectMapper, PubSubGrpc.PubSubStub asyncStubAuthenticated, PubSubGrpc.PubSubBlockingStub blockingStubAuthenticated, Map<String, CdcHandler> cdcHandlerMap){
+    public SfGrpcClient(ThreadPoolTaskScheduler threadPoolTaskScheduler, ErrorLogService errorLogService, SfSyncService sfSyncService, ObjectMapper objectMapper, PubSubGrpc.PubSubStub asyncStubAuthenticated, PubSubGrpc.PubSubBlockingStub blockingStubAuthenticated, Map<String, CdcHandler> cdcHandlerMap, DlqService dlqService){
 
         this.sfSyncService = sfSyncService;
         this.errorLogService = errorLogService;
         this.threadPoolTaskScheduler = threadPoolTaskScheduler;
+        this.dlqService =dlqService;
         this.objectMapper = objectMapper;
         this.cdcHandlerMap =cdcHandlerMap;
         this.asyncStubAuthenticated = asyncStubAuthenticated;
@@ -78,11 +83,24 @@ public class SfGrpcClient {
             maxAttempts = 3,
             backoff = @Backoff(delay = 1000)
     )
-    public void getTopicInfo(String topicName) throws StatusRuntimeException{
+    public void getTopicInfo(String topicName){
         TopicRequest topicRequest = buildTopicRequest(topicName);
         logger.info("getTopicInfo blockingStubAuthenticated {}",blockingStubAuthenticated);
         TopicInfo topicInfo = blockingStubAuthenticated.getTopic(topicRequest);
         logger.info("topicInfo: {}",topicInfo);
+    }
+
+    @Recover
+    public void getTopicInfoRecover(Exception e, String topicName) {
+        ErrorLogDto errorLogDto = new ErrorLogDto(
+                "grpc error: "+e.getMessage(),
+                topicName+" getTopicInfoRecover recover",
+                "",
+                "Salesforce",
+                e.getClass().toString(),
+                e.toString()
+        );
+        errorLogService.logError(errorLogDto);
     }
 
     public FetchRequest buildFetchRequest(String topicName, int numRequested, ByteString replayId){
@@ -346,7 +364,7 @@ public class SfGrpcClient {
             logger.info("asyncStubAuthenticated: {}",asyncStubAuthenticated);
             logger.info("blockingStubAuthenticated: {}",blockingStubAuthenticated);
 
-            StreamObserver<FetchRequest> fetchRequestStreamObserver = asyncStubAuthenticated.subscribe(new SfGrpcListener(threadPoolTaskScheduler, errorLogService,this, cdcHandlerMap, topicName, numRequested));
+            StreamObserver<FetchRequest> fetchRequestStreamObserver = asyncStubAuthenticated.subscribe(new SfGrpcListener(threadPoolTaskScheduler, errorLogService,this, cdcHandlerMap, topicName, numRequested,dlqService));
             fetchRequestStreamObserverMap.put(topicName, fetchRequestStreamObserver);
             retryCdcStateMap.computeIfAbsent(topicName, t-> getDefaultRetryCdcState(numRequested));
             fetchRequestStreamObserver.onNext(buildFetchRequest(topicName, numRequested, replayId));

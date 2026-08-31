@@ -18,3 +18,16 @@ spring.grpc.client.channel.salesforce.ssl.enabled=true
 logging.level.root=INFO
 
 spring.batch.job.enabled=false
+
+spring.task.execution.pool.core-size=8
+spring.task.execution.pool.max-size=12
+spring.task.execution.pool.queue-capacity=100
+
+spring.task.scheduling.pool.size=2
+
+spring.rabbitmq.host=localhost
+spring.rabbitmq.port=5672
+spring.rabbitmq.username=guest
+spring.rabbitmq.password=guest
+
+spring.rabbitmq.template.retry.enabled=true
