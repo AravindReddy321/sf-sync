@@ -17,6 +17,7 @@ import java.util.Arrays;
 import java.util.List;
 
 @Component
+//reviewed
 public class SfGrpcRunner implements CommandLineRunner {
 
     private static final Logger logger = LoggerFactory.getLogger(SfGrpcRunner.class);
@@ -38,14 +39,14 @@ public class SfGrpcRunner implements CommandLineRunner {
     public void run(String... args) throws Exception {
         logger.info("SfGrpcRunner starting...sfGrpcClient {}", sfGrpcClient);
 //        printAllBeans();
-        invoke();
+//        invoke();
     }
 
     public void invoke(){
         List<StatusRuntimeException> grpcExceptions = new ArrayList<>();
         for(String topicName : topicsList){
             try{
-//                sfGrpcClient.getTopicInfo(topicName);
+                sfGrpcClient.getTopicInfo(topicName);
                 sfGrpcClient.startCdcSubscription(topicName,5, null);
             } catch(StatusRuntimeException e){
                 grpcExceptions.add(e);
@@ -73,7 +74,7 @@ public class SfGrpcRunner implements CommandLineRunner {
         });
 
         errorLogService.logErrorList(errorLogDtoList);
-        throw new SfSyncException("Grpc Exception");
+//        throw new SfSyncException("Grpc Exception");
     }
 
     public void printAllBeans(){

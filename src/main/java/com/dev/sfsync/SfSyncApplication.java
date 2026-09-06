@@ -21,9 +21,6 @@ public class SfSyncApplication {
 
     public static void main(String[] args) {
         ApplicationContext applicationContext = SpringApplication.run(SfSyncApplication.class, args);
-//        SfGrpcClient sfGrpcClient = applicationContext.getBean(SfGrpcClient.class);
-//        sfGrpcClient.getTopicInfo("/data/AccountChangeEvent");
-//        sfGrpcClient.startCdcSubscription("/data/AccountChangeEvent",5);
     }
 
 }

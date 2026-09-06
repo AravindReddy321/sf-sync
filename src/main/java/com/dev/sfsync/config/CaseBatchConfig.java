@@ -91,7 +91,14 @@ public class CaseBatchConfig {
     public ItemProcessor<CaseDto, Case> caseItemProcessor(){
         try{
             logger.info("inside caseItemProcessor");
-            return caseMapper::convertCaseDtoToCase;
+//            return caseMapper::convertCaseDtoToCase;
+            return a->{
+                if(a.priority() =="Medium") {
+                    return null;
+                }else{
+                    return caseMapper.convertCaseDtoToCase(a);
+                }
+            };
         } catch (Exception e) {
             logger.error("error in caseItemProcessor {}",e.getMessage());
             throw new SfSyncException(e.getMessage());

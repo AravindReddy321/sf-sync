@@ -66,8 +66,8 @@ public class AccountCdcHandler implements CdcHandler {
             List<AccountDto> accountDtoListToSync = new ArrayList<>();
             Map<String, Object> createUpdateCombinedMap = getCreateUpdateCombinedMap(finalDataMapList);
             if(createUpdateCombinedMap == null){ return; }
-            List<AccountDto> accountDtoCreateList = (List<AccountDto>) getCreateUpdateCombinedMap(finalDataMapList).getOrDefault("createList", new ArrayList<>());
-            Map<String, Object>updatedDataMap = (Map<String, Object>) getCreateUpdateCombinedMap(finalDataMapList).getOrDefault("updatedDataMap", new HashMap<>());
+            List<AccountDto> accountDtoCreateList = (List<AccountDto>) createUpdateCombinedMap.getOrDefault("createList", new ArrayList<>());
+            Map<String, Object>updatedDataMap = (Map<String, Object>) createUpdateCombinedMap.getOrDefault("updatedDataMap", new HashMap<>());
             logger.info("updatedDataMap {}", updatedDataMap);
             if(updatedDataMap != null && !updatedDataMap.isEmpty()){
                 accountDtoUpdateList.addAll(buildAccountDtoUpdateEvent(updatedDataMap));
@@ -97,10 +97,10 @@ public class AccountCdcHandler implements CdcHandler {
     }
 
     public List<AccountDto> buildAccountDtoUpdateEvent(Map<String, Object> updatedDataMap){
-            Set<String> sfIds = updatedDataMap.keySet();
+            Set<String> sfIds = new HashSet<>(updatedDataMap.keySet());
             List<Account> accList = new ArrayList<>();
             try{
-                sfSyncService.fetchAccountsBySfIds(sfIds);
+                accList = sfSyncService.fetchAccountsBySfIds(sfIds);
             } catch(Exception e){
                 dlqService.moveToDlq(updatedDataMap);
                 return new ArrayList<>();

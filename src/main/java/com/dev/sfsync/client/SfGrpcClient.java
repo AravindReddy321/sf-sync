@@ -152,26 +152,26 @@ public class SfGrpcClient {
             startCdcSubscription(topicName, numRequested, replayId);
     }
 
-    public List<Map<String,Object>>  getFinalDataMapList(List<ProducerEvent> producerEventList){
-        List<Map<String,Object>> dataFinalMapList = new ArrayList<>();
-        for(ProducerEvent producerEvent : producerEventList){
-            try{
-                String schemaId = producerEvent.getSchemaId();
-                String schemaJson = schemaMap.containsKey(schemaId) ? schemaMap.get(schemaId) : getAvroSchemaJson(schemaId);
-                logger.info("schemaJson {}",schemaJson);
-                ByteString protobufByteString = producerEvent.getPayload();
-                logger.info("protobuf ByteString {}",protobufByteString);
-                byte[] rawPayloadJavaBytes = protobufByteString.toByteArray();
-                logger.info("rawPayloadJavaBytes {}",rawPayloadJavaBytes);
-                dataFinalMapList.add(decodeAvroPayload(schemaJson, rawPayloadJavaBytes));
-            } catch (Exception e) {
-                logger.error("error in getFinalDataMapList {}",e.getMessage());
-                failedProducerEventList.add(producerEvent);
-            }
-        }
-        logger.info("dataMapList {}", dataFinalMapList);
-        return dataFinalMapList;
-    }
+//    public List<Map<String,Object>>  getFinalDataMapList(List<ProducerEvent> producerEventList){
+//        List<Map<String,Object>> dataFinalMapList = new ArrayList<>();
+//        for(ProducerEvent producerEvent : producerEventList){
+//            try{
+//                String schemaId = producerEvent.getSchemaId();
+//                String schemaJson = schemaMap.containsKey(schemaId) ? schemaMap.get(schemaId) : getAvroSchemaJson(schemaId);
+//                logger.info("schemaJson {}",schemaJson);
+//                ByteString protobufByteString = producerEvent.getPayload();
+//                logger.info("protobuf ByteString {}",protobufByteString);
+//                byte[] rawPayloadJavaBytes = protobufByteString.toByteArray();
+//                logger.info("rawPayloadJavaBytes {}",rawPayloadJavaBytes);
+//                dataFinalMapList.add(decodeAvroPayload(schemaJson, rawPayloadJavaBytes));
+//            } catch (Exception e) {
+//                logger.error("error in getFinalDataMapList {}",e.getMessage());
+//                failedProducerEventList.add(producerEvent);
+//            }
+//        }
+//        logger.info("dataMapList {}", dataFinalMapList);
+//        return dataFinalMapList;
+//    }
 
     public String getAvroSchemaJson(String schemaId){
         try{
@@ -187,174 +187,174 @@ public class SfGrpcClient {
         }
     }
 
-    private Map<String, Object> decodeAvroPayload(String schemaJson, byte[] rawPayloadJavaBytes){
-        Map<String, Object> finalDataMap = new HashMap<>();
-        try{
-            Schema schema = new Schema.Parser().parse(schemaJson);
-            GenericDatumReader<GenericRecord> reader = new GenericDatumReader<>(schema);
+//    private Map<String, Object> decodeAvroPayload(String schemaJson, byte[] rawPayloadJavaBytes){
+//        Map<String, Object> finalDataMap = new HashMap<>();
+//        try{
+//            Schema schema = new Schema.Parser().parse(schemaJson);
+//            GenericDatumReader<GenericRecord> reader = new GenericDatumReader<>(schema);
+//
+//            BinaryDecoder decoder = DecoderFactory.get().binaryDecoder(rawPayloadJavaBytes, null);
+//
+//            GenericRecord changeEventRecord = reader.read(null, decoder);
+//
+//            logger.info("record {}",changeEventRecord);
+//
+//            GenericRecord header = (GenericRecord) changeEventRecord.get("ChangeEventHeader");
+//            logger.info("header {}", header);
+//
+//            String changeEvent = header.get(CHANGE_TYPE).toString();
+//            ChangeType changeType =  ChangeType.valueOf(changeEvent);
+//
+//            finalDataMap.put(CHANGE_TYPE,changeType);
+//            logger.info("changeEventName {}", schema.getName());
+//            finalDataMap.put("changeEventName", schema.getName() );
+//
+//            Map<String, Object> dataMap = populateDataMapBasedOnChangeEvent(changeType, header, changeEventRecord, schema);
+//
+//            logger.info("dataMap before id {}", dataMap);
+//            for(Object recordId : (List<?>) header.get("recordIds")){
+//                dataMap.put("Id",recordId.toString());
+//                dataMap.computeIfAbsent(IS_DELETED, key->false);
+//                logger.info("dataMap {}", dataMap);
+//                finalDataMap.put("dataMap",dataMap);
+//            }
+//
+//        } catch (Exception e) {
+//            throw new SfSyncException(e.getMessage());
+//        }
+//        return finalDataMap;
+//
+//    }
 
-            BinaryDecoder decoder = DecoderFactory.get().binaryDecoder(rawPayloadJavaBytes, null);
-
-            GenericRecord changeEventRecord = reader.read(null, decoder);
-
-            logger.info("record {}",changeEventRecord);
-
-            GenericRecord header = (GenericRecord) changeEventRecord.get("ChangeEventHeader");
-            logger.info("header {}", header);
-
-            String changeEvent = header.get(CHANGE_TYPE).toString();
-            ChangeType changeType =  ChangeType.valueOf(changeEvent);
-
-            finalDataMap.put(CHANGE_TYPE,changeType);
-            logger.info("changeEventName {}", schema.getName());
-            finalDataMap.put("changeEventName", schema.getName() );
-
-            Map<String, Object> dataMap = populateDataMapBasedOnChangeEvent(changeType, header, changeEventRecord, schema);
-
-            logger.info("dataMap before id {}", dataMap);
-            for(Object recordId : (List<?>) header.get("recordIds")){
-                dataMap.put("Id",recordId.toString());
-                dataMap.computeIfAbsent(IS_DELETED, key->false);
-                logger.info("dataMap {}", dataMap);
-                finalDataMap.put("dataMap",dataMap);
-            }
-
-        } catch (Exception e) {
-            throw new SfSyncException(e.getMessage());
-        }
-        return finalDataMap;
-
-    }
-
-    private Map<String, Object>  populateDataMapBasedOnChangeEvent(ChangeType changeType, GenericRecord header, GenericRecord changeEventRecord, Schema schema){
-        Map<String, Object> dataMap = new HashMap<>();
-        List<String> fieldNames = new ArrayList<>();
-
-        if(ChangeType.UPDATE.equals(changeType)){
-            logger.info("change type update");
-        }
-        if(ChangeType.UPDATE.equals(changeType)){
-            Set<String> updatedFieldCategories = Set.of("changedFields");
-            for(String updatedFieldCategory : updatedFieldCategories){
-                fieldNames.addAll(convertBitmapToFieldNames(header, updatedFieldCategory,schema));
-            }
-        } else if (ChangeType.CREATE.equals(changeType)) {
-            logger.info("change type create");
-            logger.info("fields from record {}", changeEventRecord.getSchema().getFields());
-            for(Schema.Field field : schema.getFields()){
-                String fieldName = field.name();
-                if("ChangeEventHeader".equals(fieldName)){ continue; }
-                fieldNames.add(fieldName);
-            }
-        } else if (ChangeType.DELETE.equals(changeType)){
-            logger.info("change type delete");
-            dataMap.put(IS_DELETED, true);
-        }
-        logger.info("fieldNames {}", fieldNames);
-        getDataMapFromAvroPayload(fieldNames, changeEventRecord, dataMap);
-
-        return dataMap;
-    }
-
-
-    public List<String> convertBitmapToFieldNames(GenericRecord header, String fieldHeaderName, Schema schema){
-        List<String> fieldNamesList = new ArrayList<>();
-        List<Schema.Field> fields = schema.getFields();
-        List<?> bitmapList = (List<?>) header.get(fieldHeaderName);
-        if(bitmapList == null || bitmapList.isEmpty()) return fieldNamesList;
-        logger.info("bitmapList {}",bitmapList);
-        for(int i=0; i<bitmapList.size(); i++){
-            Object hexStringGenericObject = bitmapList.get(i);
-            logger.info("hexStringGenericObject {}",hexStringGenericObject);
-            String rawHex = hexStringGenericObject.toString().trim();
-            String bitmapHexString = rawHex.startsWith("0x")? rawHex.substring(2):rawHex;
-            logger.info("bitmapHexString {}",bitmapHexString);
-            Long bitmapLong = Long.parseLong(bitmapHexString,16);
-            logger.info("bitmapLong {}",bitmapLong);
-            for(int j=0;j<32;j++){
-                if((bitmapLong & (1L << j)) != 0 ){
-                    logger.info("schemaIndex {}",j);
-                    logger.info("fieldName {}", fields.get((i*32)+j).name());
-                    fieldNamesList.add(fields.get((i*32)+j).name());
-                }
-            }
-        }
-        return fieldNamesList;
-    }
-
-    public void getDataMapFromAvroPayload(List<String> fieldNames, GenericRecord avroPayload, Map<String, Object> dataMap){
-        for(String fieldName : fieldNames){
-            Object value = avroPayload.get(fieldName);
-            if(value instanceof CharSequence) { value = value.toString(); }
-            dataMap.put(fieldName, value);
-        }
-        logger.info("dataMap from getDataMapFromAvroPayload {}", dataMap);
-    }
+//    private Map<String, Object>  populateDataMapBasedOnChangeEvent(ChangeType changeType, GenericRecord header, GenericRecord changeEventRecord, Schema schema){
+//        Map<String, Object> dataMap = new HashMap<>();
+//        List<String> fieldNames = new ArrayList<>();
+//
+//        if(ChangeType.UPDATE.equals(changeType)){
+//            logger.info("change type update");
+//        }
+//        if(ChangeType.UPDATE.equals(changeType)){
+//            Set<String> updatedFieldCategories = Set.of("changedFields");
+//            for(String updatedFieldCategory : updatedFieldCategories){
+//                fieldNames.addAll(convertBitmapToFieldNames(header, updatedFieldCategory,schema));
+//            }
+//        } else if (ChangeType.CREATE.equals(changeType)) {
+//            logger.info("change type create");
+//            logger.info("fields from record {}", changeEventRecord.getSchema().getFields());
+//            for(Schema.Field field : schema.getFields()){
+//                String fieldName = field.name();
+//                if("ChangeEventHeader".equals(fieldName)){ continue; }
+//                fieldNames.add(fieldName);
+//            }
+//        } else if (ChangeType.DELETE.equals(changeType)){
+//            logger.info("change type delete");
+//            dataMap.put(IS_DELETED, true);
+//        }
+//        logger.info("fieldNames {}", fieldNames);
+//        getDataMapFromAvroPayload(fieldNames, changeEventRecord, dataMap);
+//
+//        return dataMap;
+//    }
 
 
-    public void populateCreateOrUpdateAccountDtoList(List<Map<String,Object>> finalDataMapList, List<AccountDto> accountDtoCreateList, List<AccountDto> accountDtoUpdateList){
-        Map<String, Object> updatedDataMap = new HashMap<>();
-        for(Map<String, Object> finalDataMap : finalDataMapList){
-            Map<String, Object> dataMap = (Map<String, Object>)finalDataMap.get("dataMap");
-            String sfId = (String)dataMap.get("Id");
-            logger.info("change type class {}",finalDataMap.get(CHANGE_TYPE).getClass().getName());
-            if(ChangeType.CREATE.equals(finalDataMap.get(CHANGE_TYPE))){
-                accountDtoCreateList.add(objectMapper.convertValue(dataMap,AccountDto.class));
-            } else{
-                updatedDataMap.put(sfId, dataMap);
-            }
-        }
-        logger.info("updatedDataMap {}", updatedDataMap);
-        if(!updatedDataMap.isEmpty()){
-            accountDtoUpdateList.addAll(buildAccountDtoUpdateEvent(updatedDataMap));
-        }
-    }
+//    public List<String> convertBitmapToFieldNames(GenericRecord header, String fieldHeaderName, Schema schema){
+//        List<String> fieldNamesList = new ArrayList<>();
+//        List<Schema.Field> fields = schema.getFields();
+//        List<?> bitmapList = (List<?>) header.get(fieldHeaderName);
+//        if(bitmapList == null || bitmapList.isEmpty()) return fieldNamesList;
+//        logger.info("bitmapList {}",bitmapList);
+//        for(int i=0; i<bitmapList.size(); i++){
+//            Object hexStringGenericObject = bitmapList.get(i);
+//            logger.info("hexStringGenericObject {}",hexStringGenericObject);
+//            String rawHex = hexStringGenericObject.toString().trim();
+//            String bitmapHexString = rawHex.startsWith("0x")? rawHex.substring(2):rawHex;
+//            logger.info("bitmapHexString {}",bitmapHexString);
+//            Long bitmapLong = Long.parseLong(bitmapHexString,16);
+//            logger.info("bitmapLong {}",bitmapLong);
+//            for(int j=0;j<32;j++){
+//                if((bitmapLong & (1L << j)) != 0 ){
+//                    logger.info("schemaIndex {}",j);
+//                    logger.info("fieldName {}", fields.get((i*32)+j).name());
+//                    fieldNamesList.add(fields.get((i*32)+j).name());
+//                }
+//            }
+//        }
+//        return fieldNamesList;
+//    }
 
-    public List<AccountDto> buildAccountDtoUpdateEvent(Map<String, Object> updatedDataMap){
-        Set<String> sfIds = updatedDataMap.keySet();
-        List<Account> accList = sfSyncService.fetchAccountsBySfIds(sfIds);
-        logger.info("accList fetched {}",accList);
-        List<AccountDto> updatedAccountDtos = new ArrayList<>();
-        for(Account acc : accList){
-            logger.info("acc before update {}",acc);
-            logger.info("acc getSfId {}",acc.getSfId());
-            Map<String, Object> dataMap = (Map<String, Object>) updatedDataMap.get(acc.getSfId());
-            AccountDto accountDto = AccountDto.builder()
-                    .id(dataMap.containsKey("Id") ? dataMap.get("Id").toString() : acc.sfId)
-                    .name(dataMap.containsKey("Name") ? dataMap.get("Name").toString() : acc.name)
-                    .description(dataMap.containsKey("Description") ? (String) dataMap.get("Description") : acc.description)
-                    .isDeleted(dataMap.containsKey(IS_DELETED) ? (boolean)dataMap.get(IS_DELETED): acc.isDeleted)
-                    .build();
-            logger.info("dataMap {}",dataMap);
-            logger.info("accountDto {}",accountDto);
-            updatedAccountDtos.add(accountDto);
-        }
-        return  updatedAccountDtos;
-    }
+//    public void getDataMapFromAvroPayload(List<String> fieldNames, GenericRecord avroPayload, Map<String, Object> dataMap){
+//        for(String fieldName : fieldNames){
+//            Object value = avroPayload.get(fieldName);
+//            if(value instanceof CharSequence) { value = value.toString(); }
+//            dataMap.put(fieldName, value);
+//        }
+//        logger.info("dataMap from getDataMapFromAvroPayload {}", dataMap);
+//    }
 
-    public void syncAccounts(List<AccountDto> accountDtoList){
-        sfSyncService.syncAccounts(accountDtoList);
-    }
 
-    public void processProducerEvents(List<ProducerEvent> producerEventList){
-        List<Map<String,Object>> finalDataMapList = new ArrayList<>();
-        List<AccountDto> accountDtoCreateList = new ArrayList<>();
-        List<AccountDto> accountDtoUpdateList = new ArrayList<>();
+//    public void populateCreateOrUpdateAccountDtoList(List<Map<String,Object>> finalDataMapList, List<AccountDto> accountDtoCreateList, List<AccountDto> accountDtoUpdateList){
+//        Map<String, Object> updatedDataMap = new HashMap<>();
+//        for(Map<String, Object> finalDataMap : finalDataMapList){
+//            Map<String, Object> dataMap = (Map<String, Object>)finalDataMap.get("dataMap");
+//            String sfId = (String)dataMap.get("Id");
+//            logger.info("change type class {}",finalDataMap.get(CHANGE_TYPE).getClass().getName());
+//            if(ChangeType.CREATE.equals(finalDataMap.get(CHANGE_TYPE))){
+//                accountDtoCreateList.add(objectMapper.convertValue(dataMap,AccountDto.class));
+//            } else{
+//                updatedDataMap.put(sfId, dataMap);
+//            }
+//        }
+//        logger.info("updatedDataMap {}", updatedDataMap);
+//        if(!updatedDataMap.isEmpty()){
+//            accountDtoUpdateList.addAll(buildAccountDtoUpdateEvent(updatedDataMap));
+//        }
+//    }
 
-        finalDataMapList.addAll(getFinalDataMapList(producerEventList));
-        logger.info("dataMapList {}", finalDataMapList);
+//    public List<AccountDto> buildAccountDtoUpdateEvent(Map<String, Object> updatedDataMap){
+//        Set<String> sfIds = updatedDataMap.keySet();
+//        List<Account> accList = sfSyncService.fetchAccountsBySfIds(sfIds);
+//        logger.info("accList fetched {}",accList);
+//        List<AccountDto> updatedAccountDtos = new ArrayList<>();
+//        for(Account acc : accList){
+//            logger.info("acc before update {}",acc);
+//            logger.info("acc getSfId {}",acc.getSfId());
+//            Map<String, Object> dataMap = (Map<String, Object>) updatedDataMap.get(acc.getSfId());
+//            AccountDto accountDto = AccountDto.builder()
+//                    .id(dataMap.containsKey("Id") ? dataMap.get("Id").toString() : acc.sfId)
+//                    .name(dataMap.containsKey("Name") ? dataMap.get("Name").toString() : acc.name)
+//                    .description(dataMap.containsKey("Description") ? (String) dataMap.get("Description") : acc.description)
+//                    .isDeleted(dataMap.containsKey(IS_DELETED) ? (boolean)dataMap.get(IS_DELETED): acc.isDeleted)
+//                    .build();
+//            logger.info("dataMap {}",dataMap);
+//            logger.info("accountDto {}",accountDto);
+//            updatedAccountDtos.add(accountDto);
+//        }
+//        return  updatedAccountDtos;
+//    }
 
-        populateCreateOrUpdateAccountDtoList(finalDataMapList, accountDtoCreateList, accountDtoUpdateList);
+//    public void syncAccounts(List<AccountDto> accountDtoList){
+//        sfSyncService.syncAccounts(accountDtoList);
+//    }
 
-        if(!accountDtoCreateList.isEmpty()){
-            logger.info("accountDtoCreateList {}",accountDtoCreateList);
-            syncAccounts(accountDtoCreateList);
-        }
-        if(!accountDtoUpdateList.isEmpty()){
-            logger.info("updatedAccountDtoList {}", accountDtoUpdateList);
-            syncAccounts(accountDtoUpdateList);
-        }
-    }
+//    public void processProducerEvents(List<ProducerEvent> producerEventList){
+//        List<Map<String,Object>> finalDataMapList = new ArrayList<>();
+//        List<AccountDto> accountDtoCreateList = new ArrayList<>();
+//        List<AccountDto> accountDtoUpdateList = new ArrayList<>();
+//
+//        finalDataMapList.addAll(getFinalDataMapList(producerEventList));
+//        logger.info("dataMapList {}", finalDataMapList);
+//
+//        populateCreateOrUpdateAccountDtoList(finalDataMapList, accountDtoCreateList, accountDtoUpdateList);
+//
+//        if(!accountDtoCreateList.isEmpty()){
+//            logger.info("accountDtoCreateList {}",accountDtoCreateList);
+//            syncAccounts(accountDtoCreateList);
+//        }
+//        if(!accountDtoUpdateList.isEmpty()){
+//            logger.info("updatedAccountDtoList {}", accountDtoUpdateList);
+//            syncAccounts(accountDtoUpdateList);
+//        }
+//    }
 
 
 

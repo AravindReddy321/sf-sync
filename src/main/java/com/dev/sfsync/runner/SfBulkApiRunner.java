@@ -77,16 +77,16 @@ public class SfBulkApiRunner implements CommandLineRunner {
 
         logger.info("fieldNamesList {}", fieldNamesList);
 
-//        sfBulkApiClient.submitBulkQuery(accountQueryWithWhereCond,"Account");
+        sfBulkApiClient.submitBulkQuery(accountQueryWithWhereCond,"Account");
 
-//        invokeCaseBulkJob();
+        invokeCaseBulkJob();
     }
 
     public void invokeCaseBulkJob(){
         try{
             logger.info("inside invokeCaseBulkJob");
             String caseQueryWithWhereCond = getCaseSelectStatement()+" WHERE "+ buildRecentCaseClosedDateCondition();
-//            sfBulkApiClient.submitBulkQuery(caseQueryWithWhereCond, "Case");
+            sfBulkApiClient.submitBulkQuery(caseQueryWithWhereCond, "Case");
         } catch(Exception e){
             logger.error("Exception occurred while invoke caseBulkJob {}",e.getMessage());
             throw new SfSyncException(e.getMessage());

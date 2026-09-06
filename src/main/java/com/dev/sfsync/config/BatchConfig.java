@@ -3,11 +3,17 @@ package com.dev.sfsync.config;
 import com.dev.sfsync.exception.SfSyncException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.batch.core.configuration.JobRegistry;
+import org.springframework.batch.core.configuration.support.MapJobRegistry;
 import org.springframework.batch.core.job.JobExecution;
+import org.springframework.batch.core.launch.support.TaskExecutorJobOperator;
 import org.springframework.batch.core.listener.JobExecutionListener;
+import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.Resource;
+import org.springframework.core.task.TaskExecutor;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import java.lang.reflect.RecordComponent;
 import java.util.Arrays;
@@ -32,6 +38,20 @@ public class BatchConfig {
     @Bean
     public Map<String, Resource> jobParamMapBean(){
         return new HashMap<>();
+    }
+
+    @Bean
+    public JobRegistry jobRegistry(){
+        return new MapJobRegistry();
+    }
+
+    @Bean
+    public TaskExecutorJobOperator taskExecutorJobOperator(JobRepository jobRepository, JobRegistry jobRegistry , ThreadPoolTaskExecutor threadPoolTaskExecutor) {
+        TaskExecutorJobOperator taskExecutorJobOperator = new TaskExecutorJobOperator();
+        taskExecutorJobOperator.setJobRepository(jobRepository);
+        taskExecutorJobOperator.setTaskExecutor(threadPoolTaskExecutor);
+        taskExecutorJobOperator.setJobRegistry(jobRegistry);
+        return taskExecutorJobOperator;
     }
 
     @Bean

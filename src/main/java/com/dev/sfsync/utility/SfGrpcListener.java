@@ -61,10 +61,10 @@ public class SfGrpcListener implements StreamObserver<FetchResponse> {
 
         List<ConsumerEvent> consumerEventList = value.getEventsList();
         if(consumerEventList.isEmpty() ){ return;}
-        List<ProducerEvent> producerEventList = new ArrayList<>();
-        consumerEventList.forEach(event -> producerEventList.add(event.getEvent()));
 
-        processProducerEvents(producerEventList);
+        Map<String,ProducerEvent> producerEventMap = new HashMap<>();
+        consumerEventList.forEach(event -> producerEventMap.put(event.getReplayId().toString(),event.getEvent()));
+        processProducerEvents(producerEventMap);
 
         logger.info("value get pending num requested {}", value.getPendingNumRequested());
         lastReplayId = value.getLatestReplayId();
@@ -81,7 +81,7 @@ public class SfGrpcListener implements StreamObserver<FetchResponse> {
         logger.error("inside in onError {}", t.getMessage());
         Status status = Status.fromThrowable(t);
         if(status.getCode() == Status.Code.UNAVAILABLE && sfGrpcClient.retryLimitAvialbale(topicName)){
-            retrySubsrciption();
+            restartSubsrciptionWithDelay(60L);
             return;
         }
         StatusRuntimeException e = status.asRuntimeException();
@@ -98,19 +98,12 @@ public class SfGrpcListener implements StreamObserver<FetchResponse> {
 
     public void onCompleted() {
         logger.info("in onCompleted");
-        retrySubsrciption();
-//        try{
-//            Thread.currentThread().sleep(5000);
-//            restartSubsrciption();
-//        } catch(InterruptedException e){
-//            logger.error("error in onCompleted thread sleep {}",e.getMessage());
-//            throw new SfSyncException(e.getMessage());
-//        }
+        restartSubsrciptionWithDelay(30L);
     }
 
-    public void processProducerEvents(List<ProducerEvent> producerEventList){
+    public void processProducerEvents(Map<String,ProducerEvent> producerEventMap){
         List<Map<String,Object>> finalDataMapList = new ArrayList<>();
-        finalDataMapList.addAll(getFinalDataMapList(producerEventList));
+        finalDataMapList.addAll(getFinalDataMapList(producerEventMap));
         logger.info("finalDataMapList from processProducerEvents {}", finalDataMapList);
         if(finalDataMapList.isEmpty()){
             logger.info("finalDataMapList is empty");
@@ -122,26 +115,46 @@ public class SfGrpcListener implements StreamObserver<FetchResponse> {
         cdcHandler.processEventsData(finalDataMapList);
     }
 
-    public List<Map<String,Object>>  getFinalDataMapList(List<ProducerEvent> producerEventList){
+    public List<Map<String,Object>>  getFinalDataMapList(Map<String,ProducerEvent> producerEventMap){
         List<Map<String,Object>> finalDataMapList = new ArrayList<>();
-        for(ProducerEvent producerEvent : producerEventList){
+        Map<String, Exception> failedProducerEventMap = new HashMap<>();
+        for(String replayId : producerEventMap.keySet()){
+            ProducerEvent producerEvent = producerEventMap.get(replayId);
             String schemaId = producerEvent.getSchemaId();
             String schemaJson = sfGrpcClient.getAvroSchemaJson(schemaId);
             logger.info("schemaJson {}",schemaJson);
-            ByteString protobufByteString = producerEvent.getPayload();
-            logger.info("protobuf ByteString {}",protobufByteString);
-            byte[] rawPayloadJavaBytes = protobufByteString.toByteArray();
+            ByteString protobufByteStringPayload = producerEvent.getPayload();
+            logger.info("protobuf ByteString {}",protobufByteStringPayload);
+            byte[] rawPayloadJavaBytes = protobufByteStringPayload.toByteArray();
             logger.info("rawPayloadJavaBytes {}",rawPayloadJavaBytes);
             Map<String,Object> finalDataMap = new HashMap<>();
             try{
                 finalDataMap = decodeAvroPayloadToFinalDataMap(schemaJson, rawPayloadJavaBytes);
+                finalDataMapList.add(finalDataMap);
             } catch (IOException e) {
-                logger.info("unable to decode avro payload {}",e.getMessage());
-                dlqService.moveToDlq(rawPayloadJavaBytes);
+//                logger.info("unable to decode avro payload {}",e.getMessage());
+//                dlqService.moveToDlq(rawPayloadJavaBytes);
+                String failureRecordKey = replayId+":"+protobufByteStringPayload;
+                failedProducerEventMap.put(failureRecordKey,e);
             }
-            finalDataMapList.add(finalDataMap);
         }
         logger.info("finalDataMapList {}", finalDataMapList);
+        if(!finalDataMapList.isEmpty()){
+            List<ErrorLogDto> errorLogDtoList = new ArrayList<>();
+            for(String failureRecordKey : failedProducerEventMap.keySet()){
+                Exception cause = failedProducerEventMap.get(failureRecordKey);
+                ErrorLogDto errorLogDto = new ErrorLogDto(
+                        "Produce event avro payload decoding failure",
+                        "SfGrpcListener",
+                        failureRecordKey,
+                        "Salesforce",
+                        cause.getClass().toString(),
+                        Arrays.toString(cause.getStackTrace())
+                );
+                errorLogDtoList.add(errorLogDto);
+            }
+            errorLogService.logErrorList(errorLogDtoList);
+        }
         return finalDataMapList;
     }
 
@@ -247,7 +260,7 @@ public class SfGrpcListener implements StreamObserver<FetchResponse> {
             logger.info("bitmapHexString {}",bitmapHexString);
             Long bitmapLong = Long.parseLong(bitmapHexString,16);
             logger.info("bitmapLong {}",bitmapLong);
-            for(int j=0;j<32;j++){
+            for(int j=0;j<fields.size();j++){
                 if((bitmapLong & (1L << j)) != 0 ){
                     logger.info("schemaIndex {} and total index {}",j, (i*32)+j);
                     logger.info("fieldName {}", fields.get((i*32)+j).name());
@@ -269,41 +282,42 @@ public class SfGrpcListener implements StreamObserver<FetchResponse> {
 //        }
 //    }
 
-    public FetchRequest buildRefillFetchRequest(String topicName, int numRequested, ByteString replayId){
-        try{
-            if(replayId == null){ return buildRefillFetchRequest(topicName, numRequested); }
-            return FetchRequest.newBuilder()
-                    .setTopicName(topicName)
-                    .setNumRequested(numRequested)
-                    .setReplayPreset(ReplayPreset.CUSTOM)
-                    .setReplayId(replayId)
-                    .build();
-        } catch(Exception e){
-            logger.error("error in buildRefillFetchRequest using last replayid {}",e.getMessage());
-            throw new SfSyncException(e.getMessage());
-        }
-    }
+//    public FetchRequest buildRefillFetchRequest(String topicName, int numRequested, ByteString replayId){
+//        try{
+//            if(replayId == null){ return buildRefillFetchRequest(topicName, numRequested); }
+//            return FetchRequest.newBuilder()
+//                    .setTopicName(topicName)
+//                    .setNumRequested(numRequested)
+//                    .setReplayPreset(ReplayPreset.CUSTOM)
+//                    .setReplayId(replayId)
+//                    .build();
+//        } catch(Exception e){
+//            logger.error("error in buildRefillFetchRequest using last replayid {}",e.getMessage());
+//            throw new SfSyncException(e.getMessage());
+//        }
+//    }
 
-    public FetchRequest buildRefillFetchRequest(String topicName, int numRequested){
-        try{
-            return FetchRequest.newBuilder()
-                    .setTopicName(topicName)
-                    .setNumRequested(numRequested)
-                    .setReplayPreset(ReplayPreset.LATEST)
-                    .build();
-        } catch (Exception e) {
-            logger.info("error in buildRefillRequest no replayid {}", e.getMessage());
-            throw new SfSyncException(e.getMessage());
-        }
-    }
+//    public FetchRequest buildRefillFetchRequest(String topicName, int numRequested){
+//        try{
+//            return FetchRequest.newBuilder()
+//                    .setTopicName(topicName)
+//                    .setNumRequested(numRequested)
+//                    .setReplayPreset(ReplayPreset.LATEST)
+//                    .build();
+//        } catch (Exception e) {
+//            logger.info("error in buildRefillRequest no replayid {}", e.getMessage());
+//            throw new SfSyncException(e.getMessage());
+//        }
+//    }
 
     public void restartSubsrciption(){
         sfGrpcClient.restartSubsrciption(this.topicName, this.numRequested, this.lastReplayId);
     }
 
 
-    public void retrySubsrciption(){
+    public void restartSubsrciptionWithDelay(Long delay){
         sfGrpcClient.retryCdcStateIncerement(topicName, numRequested);
-        threadPoolTaskScheduler.schedule( this::restartSubsrciption, Instant.now().plusSeconds(60));
+        delay =delay != null ? delay : 60;
+        threadPoolTaskScheduler.schedule( this::restartSubsrciption, Instant.now().plusSeconds(delay));
     }
 }
