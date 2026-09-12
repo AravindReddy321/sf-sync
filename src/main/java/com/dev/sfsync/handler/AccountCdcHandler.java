@@ -15,7 +15,6 @@ import org.springframework.stereotype.Component;
 import java.util.*;
 
 @Component("AccountChangeEvent")
-//reviewed
 public class AccountCdcHandler implements CdcHandler {
     private static final Logger logger = LoggerFactory.getLogger(AccountCdcHandler.class);
     private static final String CHANGE_TYPE = "changeType";
@@ -129,11 +128,6 @@ public class AccountCdcHandler implements CdcHandler {
                         .build();
                 logger.info("dataMap {}",dataMap);
                 logger.info("accountDto {}",accountDto);
-    //                                    updatedAccounts.add(objectMapper.readerForUpdating(acc)
-    //                                                    .readValue(objectMapper.writeValueAsString(dataMap)));
-    //                                    objectMapper.readerForUpdating(acc)
-    //                                            .readValue(objectMapper.writeValueAsString(dataMap));
-    //                                    logger.info("acc after update {}",acc);
                 updatedAccountDtos.add(accountDto);
             }
             return  updatedAccountDtos;

@@ -39,7 +39,6 @@ import java.lang.reflect.RecordComponent;
 import java.util.*;
 
 @Configuration
-//reviewed
 public class AccountBatchConfig {
 //    private final Logger logger = LoggerFactory.getLogger(this.getClass());
     private static final Logger logger = LoggerFactory.getLogger(AccountBatchConfig.class);
@@ -51,18 +50,6 @@ public class AccountBatchConfig {
         this.batchConfig = batchConfig;
     }
 
-//    public String[] getRecordClassFieldNames(Class<?> clazz) {
-//        return Arrays.stream(clazz.getRecordComponents())
-//                .map(RecordComponent::getName)
-//                .toArray(String[]::new);
-////                .toList();
-////                .collect(Collectors.toSet());
-//    }
-
-//    @Bean
-//    public Map<String, Resource> jobParamMapBean(){
-//        return new HashMap<>();
-//    }
 
     @Bean
     @StepScope

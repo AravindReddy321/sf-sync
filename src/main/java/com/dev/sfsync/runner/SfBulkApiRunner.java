@@ -17,7 +17,6 @@ import java.util.Arrays;
 import java.util.List;
 
 @Component
-//reviewed
 public class SfBulkApiRunner implements CommandLineRunner {
 
     private static final Logger logger = LoggerFactory.getLogger(SfBulkApiRunner.class);
@@ -58,14 +57,8 @@ public class SfBulkApiRunner implements CommandLineRunner {
     @Override
     public void run(String... args) throws Exception {
 
-//        List<String> selectedFieldsList = List.of("Id", "Name", "Description");
-//        String selectedFields = String.join(",", getAccountDtoFieldNames());
-//        String accountQuery = "SELECT %s FROM Account";
-//        accountQuery = accountQuery.formatted(selectedFields);
 
         String accountQueryWithWhereCond = getAccountSelectStatement() + " WHERE " + buildAccountLastModDateCondition();
-
-//        logger.info("accountQuery {}", accountQuery);
         logger.info("accountQueryWithWhereCond {}", accountQueryWithWhereCond);
 
         sfBulkApiClient.buildBuilkJobQueryBody(accountQueryWithWhereCond);

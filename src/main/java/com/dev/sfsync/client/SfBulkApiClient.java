@@ -25,7 +25,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadPoolExecutor;
 
 @Component
-//reviewed
 public class SfBulkApiClient {
 
     private static final Logger logger = LoggerFactory.getLogger(SfBulkApiClient.class);
@@ -93,14 +92,6 @@ public class SfBulkApiClient {
 
         String bulkJobId = (String)bulkQueryResponseMap.get("id");
         logger.info("bulkJobId {}", bulkJobId);
-//        String bulkJobStatus = "";
-//            while(!JOB_COMPLETE_STATUS.equals(bulkJobStatus)){
-//                Map<?, ?> bulkJobStatusResponseMap = getBulkJobStatus(bulkJobId);
-//                logger.info("bulkJobStatusResponseMap {}", bulkJobStatusResponseMap);
-//                bulkJobStatus = (String)bulkJobStatusResponseMap.get("state");
-//                logger.info("bulkJobStatus {}", bulkJobStatus);
-//                Thread.sleep(2000);
-//            }
         processBulkJobResults(bulkJobId,sfObjectName);
 
     }
@@ -139,8 +130,6 @@ public class SfBulkApiClient {
             JobParameters jobParameters = new JobParametersBuilder()
                                             .addString("sfObjectName", sfObjectName)
                                             .addString("runTime",Instant.now().toString())
-//                                            .addString("runTime", "2026-09-08T13:52:51.802742Z") //case
-//                    .addString("runTime", "2026-09-08T13:52:36.478471Z") //account
 
                                             .toJobParameters();
             switch (sfObjectName){
