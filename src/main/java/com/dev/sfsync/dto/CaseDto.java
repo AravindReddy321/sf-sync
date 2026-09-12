@@ -8,6 +8,8 @@ public record CaseDto(
         String priority,
         String status,
         String reason,
-        String closedDate
+        String closedDate,
+        String createdDate,
+        String lastModifiedDate
 ) {
 }

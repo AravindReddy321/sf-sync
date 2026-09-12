@@ -18,11 +18,13 @@ public class CaseSyncService {
         this.caseRepository = caseRepository;
     }
 
-    public Instant getRecentCaseClosedDate(){
+    public Instant getRecentCaseLastModifiedDate(){
 
         try {
             logger.info("inside getRecentCaseClosedDate");
-            return caseRepository.findTopByOrderByClosedDateDesc().map(Case::getClosedDate).orElse(Instant.EPOCH);
+            return caseRepository.
+                    findTopByOrderByLastModifiedDateDesc().map(Case::getCreatedDate).orElse(Instant.EPOCH);
+//                        findTopByOrderByClosedDateDesc().map(Case::getClosedDate).orElse(Instant.EPOCH);
         } catch (Exception e) {
             logger.error("error in getRecentCaseClosedDate {}",e.getMessage());
             throw new SfSyncException(e.getMessage());

@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 import java.util.*;
 
 @Component("AccountChangeEvent")
+//reviewed
 public class AccountCdcHandler implements CdcHandler {
     private static final Logger logger = LoggerFactory.getLogger(AccountCdcHandler.class);
     private static final String CHANGE_TYPE = "changeType";

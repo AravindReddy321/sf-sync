@@ -112,7 +112,7 @@ public class CaseBatchConfig {
             JdbcBatchItemWriter<Case> jdbcBatchItemWriter = new JdbcBatchItemWriter<>();
             jdbcBatchItemWriter.setDataSource(dataSource);
             String sql = ("""
-                    INSERT INTO cases(sf_id,subject,priority,status,reason,closed_date)
+                    INSERT INTO cases(sf_id,subject,priority,status,reason,closed_date,created_date,last_modified_date)
                      VALUES(:%s)
                     """).formatted(String.join(",:", caseDtoRecordClassFieldNames));
             logger.info("caseItemWriter {}",sql);

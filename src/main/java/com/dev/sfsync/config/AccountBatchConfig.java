@@ -39,6 +39,7 @@ import java.lang.reflect.RecordComponent;
 import java.util.*;
 
 @Configuration
+//reviewed
 public class AccountBatchConfig {
 //    private final Logger logger = LoggerFactory.getLogger(this.getClass());
     private static final Logger logger = LoggerFactory.getLogger(AccountBatchConfig.class);

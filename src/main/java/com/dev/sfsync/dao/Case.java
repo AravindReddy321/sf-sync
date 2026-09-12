@@ -5,6 +5,8 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
 
 import java.time.Instant;
 
@@ -38,4 +40,12 @@ public class Case {
 
     @Column(name="closed_date")
     private Instant closedDate;
+
+    @CreatedDate
+    @Column(name="created_date",updatable=false)
+    private Instant createdDate;
+
+    @LastModifiedDate
+    @Column(name="last_modified_date")
+    private Instant lastModifiedDate;
 }

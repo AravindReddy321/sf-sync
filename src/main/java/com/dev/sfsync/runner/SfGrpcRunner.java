@@ -17,7 +17,6 @@ import java.util.Arrays;
 import java.util.List;
 
 @Component
-//reviewed
 public class SfGrpcRunner implements CommandLineRunner {
 
     private static final Logger logger = LoggerFactory.getLogger(SfGrpcRunner.class);
@@ -39,7 +38,7 @@ public class SfGrpcRunner implements CommandLineRunner {
     public void run(String... args) throws Exception {
         logger.info("SfGrpcRunner starting...sfGrpcClient {}", sfGrpcClient);
 //        printAllBeans();
-//        invoke();
+        invoke();
     }
 
     public void invoke(){
@@ -74,7 +73,6 @@ public class SfGrpcRunner implements CommandLineRunner {
         });
 
         errorLogService.logErrorList(errorLogDtoList);
-//        throw new SfSyncException("Grpc Exception");
     }
 
     public void printAllBeans(){

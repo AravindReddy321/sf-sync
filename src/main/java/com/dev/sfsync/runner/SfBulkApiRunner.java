@@ -17,6 +17,7 @@ import java.util.Arrays;
 import java.util.List;
 
 @Component
+//reviewed
 public class SfBulkApiRunner implements CommandLineRunner {
 
     private static final Logger logger = LoggerFactory.getLogger(SfBulkApiRunner.class);
@@ -51,7 +52,7 @@ public class SfBulkApiRunner implements CommandLineRunner {
     }
 
     public String buildRecentCaseClosedDateCondition(){
-        return "closedDate >"+caseSynService.getRecentCaseClosedDate();
+        return "lastModifiedDate >"+caseSynService.getRecentCaseLastModifiedDate();
     }
 
     @Override

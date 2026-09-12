@@ -25,11 +25,14 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadPoolExecutor;
 
 @Component
+//reviewed
 public class SfBulkApiClient {
 
     private static final Logger logger = LoggerFactory.getLogger(SfBulkApiClient.class);
     private static final String JOB_PARAM_MAP_BEAN_NAME="jobParamMapBean";
     private static final String JOB_COMPLETE_STATUS="JobComplete";
+    private static final String UPLOAD_COMPLETE_STATUS="UploadComplete";
+    private static final String IN_PROGRESS_STATUS="InProgress";
 
     private final String salesforceBaseEndpoint;
     private final String  accessToken;
@@ -105,7 +108,7 @@ public class SfBulkApiClient {
     public void processBulkJobResults(String bulkJobId, String sfObjectName){
         String jobStatus = getBulkJobStatus(bulkJobId);
         logger.info("jobStatus {}", jobStatus);
-        if("InProgress".equalsIgnoreCase(jobStatus)){
+        if(IN_PROGRESS_STATUS.equalsIgnoreCase(jobStatus) || UPLOAD_COMPLETE_STATUS.equalsIgnoreCase(jobStatus)){
             threadPoolTaskScheduler.schedule(()->{
                 logger.info("scheduling job {}",bulkJobId);
                 processBulkJobResults(bulkJobId, sfObjectName);
@@ -136,6 +139,9 @@ public class SfBulkApiClient {
             JobParameters jobParameters = new JobParametersBuilder()
                                             .addString("sfObjectName", sfObjectName)
                                             .addString("runTime",Instant.now().toString())
+//                                            .addString("runTime", "2026-09-08T13:52:51.802742Z") //case
+//                    .addString("runTime", "2026-09-08T13:52:36.478471Z") //account
+
                                             .toJobParameters();
             switch (sfObjectName){
                 case "Account":

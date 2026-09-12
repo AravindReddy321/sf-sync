@@ -9,4 +9,6 @@ import java.util.Optional;
 @Repository
 public interface CaseRepository extends JpaRepository<Case, Long> {
     Optional<Case> findTopByOrderByClosedDateDesc();
+
+    Optional<Case> findTopByOrderByLastModifiedDateDesc();
 }
