@@ -1,0 +1,33 @@
+sf.uri = https://login.salesforce.com
+sf.clientid = CLIENT_ID_FROM_EXTERNAL_CLIENT_APP
+sf.clientsecret = CLIENT_SECRET_FROM_EXTERNAL_CLIENT_APP
+sf.tenantid = SALESFORCE_ORG_ID
+sf.channels.account-cdc = /data/AccountChangeEvent
+sf.channels.contact-cdc = /data/ContactChangeEvent
+sf.channels.event-num-req = 5
+
+spring.datasource.url = jdbc:mysql://localhost:3306/sf_db
+spring.datasource.username = root
+spring.datasource.password = root
+spring.jpa.hibernate.ddl-auto = update
+
+#slaesforce grpc pub sub channel connections
+spring.grpc.client.channel.salesforce.target=api.pubsub.salesforce.com:7443
+spring.grpc.client.channel.salesforce.ssl.enabled=true
+
+logging.level.root=INFO
+
+spring.batch.job.enabled=false
+
+spring.task.execution.pool.core-size=8
+spring.task.execution.pool.max-size=12
+spring.task.execution.pool.queue-capacity=100
+
+spring.task.scheduling.pool.size=2
+
+spring.rabbitmq.host=localhost
+spring.rabbitmq.port=5672
+spring.rabbitmq.username=guest
+spring.rabbitmq.password=guest
+
+spring.rabbitmq.template.retry.enabled=true
