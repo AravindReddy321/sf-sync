@@ -28,12 +28,12 @@ The CDC implementation reads Salesforce event schemas, decodes Avro payloads, an
 Salesforce Bulk API 2.0
     -> Submit SOQL query job
     -> Poll job status asynchronously
-    -> Retrieve CSV result resource
-    -> Spring Batch reader, processor, and writer
+    -> Retrieve query results
+    -> Process results with Spring Batch reader, processor, and writer
     -> MySQL persistence
 ```
 
-Bulk synchronization runs when the application starts. Salesforce query results are supplied directly to Spring Batch as a resource and processed in chunks; the application does not need to create a permanent local CSV file.
+Bulk synchronization is started through the application startup runner. The Bulk API client submits SOQL query jobs, polls Salesforce until the job is complete, and passes the returned result to Spring Batch for chunk-based processing.
 
 ## Features
 
@@ -58,8 +58,6 @@ The application separates failures by type:
 - Database connectivity and transaction failures can be retried.
 - Data-integrity failures are recorded separately because retrying unchanged invalid data is unlikely to succeed.
 - CDC records that cannot be safely processed can be routed to RabbitMQ for later manual review and replay.
-
-RabbitMQ currently stores failed work; automatic replay is not yet implemented.
 
 ## Technology stack
 
@@ -102,8 +100,6 @@ Update it with your:
 - RabbitMQ connection details
 - Salesforce gRPC channel target
 
-`src/main/resources/application.properties` is ignored by Git and must not be committed because it contains local credentials.
-
 ## Run the application
 
 Start MySQL and RabbitMQ, and then run:
@@ -112,17 +108,10 @@ Start MySQL and RabbitMQ, and then run:
 ./gradlew bootRun
 ```
 
-Run the test suite with:
-
-```bash
-./gradlew test
-```
-
 ## Roadmap
 
 - enable the CDC subscription from the application startup flow
 - handle failed, aborted, and timed-out Salesforce Bulk API jobs explicitly
 - verify and harden Account and Case batch persistence behavior
 - add automated tests for CDC handling, retry behavior, and batch processing
-- add a replay workflow for records routed to RabbitMQ
 - provide Docker Compose setup for MySQL and RabbitMQ
